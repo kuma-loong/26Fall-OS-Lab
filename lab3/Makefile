@@ -376,7 +376,7 @@ grade-ai:
 	./grade-ai $(GRADEFLAGS)
 
 diff:
-	git diff lock-base-26 HEAD > commit.patch
+	git diff --relative lab3-base HEAD -- . > commit.patch
 format:
 	python3 clang-format.py
 

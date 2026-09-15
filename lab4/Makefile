@@ -352,7 +352,7 @@ format:
 
 
 diff:
-	git diff pgtbl-base-26 HEAD > commit.patch
+	git diff --relative lab4-base HEAD -- . > commit.patch
 
 WEBSUB := https://6828.scripts.mit.edu/2020/handin.py
 
