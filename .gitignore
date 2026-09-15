@@ -7,6 +7,31 @@
 !/lab3/
 !/lab4/
 
+# Within each lab, opt in to source files and the known build/test entry points.
+# New document formats and uppercase document extensions stay ignored as well.
+/lab[1-4]/**
+!/lab[1-4]/**/
+!/lab[1-4]/**/*.c
+!/lab[1-4]/**/*.h
+!/lab[1-4]/**/*.S
+!/lab[1-4]/**/*.ld
+!/lab[1-4]/**/*.py
+!/lab[1-4]/**/*.sh
+!/lab[1-4]/**/*.pl
+!/lab[1-4]/**/*.mk
+!/lab[1-4]/.clang-format
+!/lab[1-4]/.dir-locals.el
+!/lab[1-4]/.editorconfig
+!/lab[1-4]/.gdbinit.tmpl-riscv
+!/lab[1-4]/.gitignore
+!/lab[1-4]/Dockerfile
+!/lab[1-4]/LICENSE
+!/lab[1-4]/Makefile
+!/lab[1-4]/README
+!/lab[1-4]/grade-lab-*
+!/lab[1-4]/grade-ai
+!/lab[1-4]/commands.gdb
+
 # Private local materials, including copies placed inside a lab.
 .local/
 .setup/
