@@ -96,6 +96,10 @@ static struct proc *allocproc(void) {
 
 found:
   p->pid = allocpid();
+  p->seccomp_mask = ~0UL;
+  p->audit_len = 0;
+  p->child_count = 0;
+  p->max_children = 0;
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
@@ -135,6 +139,10 @@ static void freeproc(struct proc *p) {
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->seccomp_mask = ~0UL;
+  p->audit_len = 0;
+  p->child_count = 0;
+  p->max_children = 0;
   p->state = UNUSED;
 }
 
@@ -230,6 +238,9 @@ int fork(void) {
   struct proc *np;
   struct proc *p = myproc();
 
+  if (p->max_children > 0 && p->child_count >= p->max_children)
+    return -1;
+
   // Allocate process.
   if ((np = allocproc()) == 0) {
     return -1;
@@ -244,6 +255,8 @@ int fork(void) {
   np->sz = p->sz;
 
   np->parent = p;
+  np->seccomp_mask = p->seccomp_mask;
+  np->max_children = p->max_children;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -261,6 +274,7 @@ int fork(void) {
   pid = np->pid;
 
   np->state = RUNNABLE;
+  p->child_count++;
 
   release(&np->lock);
 
@@ -289,6 +303,17 @@ void reparent(struct proc *p) {
       release(&pp->lock);
     }
   }
+}
+
+static char *state_name(enum procstate state) {
+  switch (state) {
+    case UNUSED: return "unused";
+    case SLEEPING: return "sleep";
+    case RUNNABLE: return "runble";
+    case RUNNING: return "run";
+    case ZOMBIE: return "zombie";
+  }
+  return "unknown";
 }
 
 // Exit the current process.  Does not return.
@@ -338,6 +363,20 @@ void exit(int status) {
 
   acquire(&p->lock);
 
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
+            p->pid, original_parent->pid, original_parent->name,
+            state_name(original_parent->state));
+  int child_num = 0;
+  for (struct proc *child = proc; child < &proc[NPROC]; child++) {
+    if (child->parent == p) {
+      acquire(&child->lock);
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",
+                p->pid, child_num++, child->pid, child->name,
+                state_name(child->state));
+      release(&child->lock);
+    }
+  }
+
   // Give any children to init.
   reparent(p);
 
@@ -356,7 +395,7 @@ void exit(int status) {
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(uint64 addr) {
+int wait(uint64 addr, int flags) {
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -386,6 +425,7 @@ int wait(uint64 addr) {
             return -1;
           }
           freeproc(np);
+          p->child_count--;
           release(&np->lock);
           release(&p->lock);
           return pid;
@@ -395,7 +435,7 @@ int wait(uint64 addr) {
     }
 
     // No point waiting if we don't have any children.
-    if (!havekids || p->killed) {
+    if (!havekids || p->killed || flags == 1) {
       release(&p->lock);
       return -1;
     }

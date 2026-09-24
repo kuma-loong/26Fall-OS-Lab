@@ -20,8 +20,72 @@ uint64 sys_fork(void) { return fork(); }
 
 uint64 sys_wait(void) {
   uint64 p;
+  int flags;
   if (argaddr(0, &p) < 0) return -1;
-  return wait(p);
+  if (argint(1, &flags) < 0) return -1;
+  return wait(p, flags);
+}
+
+extern struct proc proc[NPROC];
+
+uint64 sys_yield(void) {
+  struct proc *p = myproc();
+  printf("Save the context of the process to the memory region from address %p to %p\n",
+         &p->context, &p->context + 1);
+  printf("Current running process pid is %d and user pc is %p\n",
+         p->pid, p->trapframe->epc);
+
+  // Search from the following slot and wrap around the process table.
+  for (int i = 1; i < NPROC; i++) {
+    struct proc *next = &proc[(p - proc + i) % NPROC];
+    acquire(&next->lock);
+    if (next->state == RUNNABLE) {
+      printf("Next runnable process pid is %d and user pc is %p\n",
+             next->pid, next->trapframe->epc);
+      release(&next->lock);
+      break;
+    }
+    release(&next->lock);
+  }
+
+  yield();
+  return 0;
+}
+
+uint64 sys_seccomp_ctl(void) {
+  int op;
+  uint64 arg;
+  struct proc *p = myproc();
+
+  if (argint(0, &op) < 0 || argaddr(1, &arg) < 0) return -1;
+  if (op == 0) {
+    p->seccomp_mask = arg;
+    return 0;
+  }
+  if (op == 1 && arg <= 0x7fffffffUL) {
+    p->max_children = arg;
+    return 0;
+  }
+  return -1;
+}
+
+uint64 sys_seccomp_getlog(void) {
+  uint64 bufaddr, lenaddr;
+  int capacity;
+  struct proc *p = myproc();
+
+  if (argaddr(0, &bufaddr) < 0 || argaddr(1, &lenaddr) < 0)
+    return -1;
+  if (copyin(p->pagetable, (char *)&capacity, lenaddr, sizeof(capacity)) < 0 ||
+      capacity < 0)
+    return -1;
+  int count = capacity < p->audit_len ? capacity : p->audit_len;
+  if (count > 0 && copyout(p->pagetable, bufaddr, (char *)p->audit_log,
+                           count * sizeof(uint64)) < 0)
+    return -1;
+  if (copyout(p->pagetable, lenaddr, (char *)&count, sizeof(count)) < 0)
+    return -1;
+  return 0;
 }
 
 uint64 sys_sbrk(void) {
