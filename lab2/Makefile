@@ -265,11 +265,17 @@ grade:
           (echo "'make clean' failed.  HINT: Do you have another running instance of xv6?" && exit 1)
 	./grade-lab-$(LAB) $(GRADEFLAGS) --toolprefix $(TOOLPREFIX)
 
+grade-extra:
+	@echo $(MAKE) clean
+	@$(MAKE) clean || \
+          (echo "'make clean' failed.  HINT: Do you have another running instance of xv6?" && exit 1)
+	./grade-lab-$(LAB)-extra $(GRADEFLAGS) --toolprefix $(TOOLPREFIX)
+
 format:
 	python3 clang-format.py
 
 diff:
-	git diff --relative lab2-base HEAD -- . > commit.patch
+	git diff --relative lab2-v2-base HEAD -- . > commit.patch
 
 ##
 ## FOR web handin
@@ -341,4 +347,4 @@ myapi.key:
 	fi;
 
 
-.PHONY: handin tarball tarball-pref clean grade handin-check
+.PHONY: handin tarball tarball-pref clean grade grade-extra handin-check
