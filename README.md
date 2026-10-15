@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `lab1/` | Unix 实用程序与启动调试 | `util` | `util-26-fall` | `lab1-base` | 已完成 |
 | `lab2/` | 进程与系统调用 | `syscall` | `syscall-26-fall-v2` | `lab2-v2-base` | 已完成（含附加题） |
-| `lab3/` | 锁 | `lock` | `lock-26-fall` | `lab3-base` | 初始代码 |
+| `lab3/` | 锁 | `lock` | `lock-26-fall-v2` | `lab3-v2-base` | 初始代码 |
 | `lab4/` | 页表 | `pgtbl` | `pgtbl-26-fall` | `lab4-base` | 初始代码 |
 
 ## 开发与运行
@@ -37,9 +37,9 @@ git commit -m "Update Lab1"
 make diff
 ```
 
-各目录的 `make diff` 仅导出当前实验相对其独立基线的已提交修改；Lab2 使用 `lab2-v2-base`。补丁内部路径为 `user/...`、`kernel/...` 等，不带 `labN/` 前缀，可应用到课程对应初始代码。
+各目录的 `make diff` 仅导出当前实验相对其独立基线的已提交修改；Lab2 使用 `lab2-v2-base`，Lab3 使用 `lab3-v2-base`。补丁内部路径为 `user/...`、`kernel/...` 等，不带 `labN/` 前缀，可应用到课程对应初始代码。
 
-`labN-base` 是本仓库导入快照的标签，不是课程仓库原标签的重命名。Lab2 更新课程基线后另设 `lab2-v2-base`，旧 `lab2-base` 仍保留。克隆时需获取这些标签，已有浅克隆可执行 `git fetch origin --tags`。
+`labN-base` 是本仓库导入快照的标签，不是课程仓库原标签的重命名。Lab2、Lab3 更新课程基线后分别另设 `lab2-v2-base`、`lab3-v2-base`，旧标签仍保留。克隆时需获取这些标签，已有浅克隆可执行 `git fetch origin --tags`。
 
 补丁导出后应在课程初始代码上执行 `git apply --check`、`git apply` 并重新测试。`commit.patch` 是本地产物，不纳入 Git。课程旧版的 `handin`、`tarball` 等目标依赖原仓库布局，本仓库使用指导书要求的 `make diff` 提交方式。
 
@@ -55,7 +55,7 @@ make diff
 - [课程初始代码](https://gitee.com/ftutorials/xv6-oslabs-hitsz)
 - Lab1 起点：`5aeed89880c77f3c3f39d3fcc312c2634ec631ce`
 - Lab2 更新后起点：`1d66d77b5473d368324c9e8ad233c6fa9e55acf7`（`syscall-26-fall-v2`）
-- Lab3 起点：`fed5864e1920de450f8e1c6ee3a3f424eab3e8f5`
+- Lab3 更新后起点：`ce41e37cf45f101fc0f3e8376c0e7cb8e2b18f8e`（`lock-26-fall-v2`）
 - Lab4 起点：`6e312f7efdf97cd3553007f30943bbfd5b0018ef`
 
 各目录保留课程源码的 `LICENSE` 和 `README`。

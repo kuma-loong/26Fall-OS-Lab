@@ -130,3 +130,6 @@ compile_commands.json
 .DS_Store
 *~
 *.swp
+
+# Required Lab3 submission metadata: integer hours only.
+!/lab3/time.txt
