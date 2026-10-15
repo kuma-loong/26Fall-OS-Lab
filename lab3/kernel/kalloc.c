@@ -36,8 +36,17 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+  // Spread boot-time pages as well: initially empty CPUs should not all
+  // contend for the boot CPU's list on their first allocation.
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
+    int id = ((uint64)p / PGSIZE) % NCPU;
+    memset(p, 1, PGSIZE);
+    struct run *r = (struct run*)p;
+    acquire(&kmem[id].lock);
+    r->next = kmem[id].freelist;
+    kmem[id].freelist = r;
+    release(&kmem[id].lock);
+  }
 }
 
 // Free the page of physical memory pointed at by v,
