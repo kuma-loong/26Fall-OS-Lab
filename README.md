@@ -7,7 +7,7 @@
 | `lab1/` | Unix 实用程序与启动调试 | `util` | `util-26-fall` | `lab1-base` | 已完成 |
 | `lab2/` | 进程与系统调用 | `syscall` | `syscall-26-fall-v2` | `lab2-v2-base` | 已完成（含附加题） |
 | `lab3/` | 锁 | `lock` | `lock-26-fall-v2` | `lab3-v2-base` | 已完成（基础实验） |
-| `lab4/` | 页表 | `pgtbl` | `pgtbl-26-fall` | `lab4-base` | 初始代码 |
+| `lab4/` | 页表 | `pgtbl` | `pgtbl-26-fall` | `lab4-base` | 已完成 |
 
 ## 开发与运行
 
@@ -18,7 +18,7 @@ cd lab1
 make qemu
 ```
 
-在该目录运行 `make grade` 执行当前实验的课程测试。Lab1 已通过 9 项测试，得分 60/60；Lab2 必做任务为 100/100，`make grade-extra` 附加题为 20/20。Lab3 基础实验已完成（含三核手动测试与完整 `usertests`），AI 附加题保留初始代码；Lab4 仍为初始代码。
+在该目录运行 `make grade` 执行当前实验的课程测试。Lab1 已通过 9 项测试，得分 60/60；Lab2 必做任务为 100/100，`make grade-extra` 附加题为 20/20。Lab3 基础实验已完成（含三核手动测试与完整 `usertests`），AI 附加题保留初始代码；Lab4 三项任务已完成，完整 `usertests` 与 `make grade`（100/100）通过，补丁已在课程初始代码上还原复测。
 
 调试 Lab1 时，在一个终端运行 `make qemu-gdb CPUS=1`，另一个终端在同目录运行 `make gdb`，随后输入 `source commands.gdb`。
 

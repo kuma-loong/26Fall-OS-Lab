@@ -37,6 +37,7 @@ void procinit(void) {
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
     p->kstack = va;
+    p->kstack_pa = (uint64)pa;
   }
   kvminithart();
 }
@@ -111,6 +112,15 @@ found:
     return 0;
   }
 
+  p->kpagetable = kvmmake();
+  if (p->kpagetable == 0 ||
+      mappages(p->kpagetable, p->kstack, PGSIZE,
+               p->kstack_pa, PTE_R | PTE_W) < 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -124,6 +134,11 @@ found:
 // including user pages.
 // p->lock must be held.
 static void freeproc(struct proc *p) {
+  if (p->kpagetable) {
+    kvmsync(p->kpagetable, 0);
+    kvmfree(p->kpagetable);
+  }
+  p->kpagetable = 0;
   if (p->trapframe) kfree((void *)p->trapframe);
   p->trapframe = 0;
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
@@ -192,6 +207,7 @@ void userinit(void) {
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  kvmsync(p->kpagetable, p->pagetable);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -213,6 +229,7 @@ int growproc(int n) {
 
   sz = p->sz;
   if (n > 0) {
+    if ((uint64)sz + n > PLIC) return -1;
     if ((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
@@ -220,6 +237,7 @@ int growproc(int n) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+  kvmsync(p->kpagetable, p->pagetable);
   return 0;
 }
 
@@ -242,6 +260,7 @@ int fork(void) {
     return -1;
   }
   np->sz = p->sz;
+  kvmsync(np->kpagetable, np->pagetable);
 
   np->parent = p;
 
@@ -430,7 +449,10 @@ void scheduler(void) {
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.

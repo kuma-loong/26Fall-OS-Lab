@@ -15,34 +15,74 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[];  // trampoline.S
 
-/*
- * create a direct-map page table for the kernel.
- */
-void kvminit() {
-  kernel_pagetable = (pagetable_t)kalloc();
-  memset(kernel_pagetable, 0, PGSIZE);
+// Create a private kernel page table. CLINT is only needed in the
+// global table; leaving it out keeps [0, PLIC) available for user pages.
+pagetable_t kvmmake(void) {
+  pagetable_t pagetable = uvmcreate();
+  if (pagetable == 0) return 0;
 
-  // uart registers
-  kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  if (mappages(pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W) < 0 ||
+      mappages(pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) < 0 ||
+      mappages(pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) < 0 ||
+      mappages(pagetable, KERNBASE, (uint64)etext - KERNBASE,
+               KERNBASE, PTE_R | PTE_X) < 0 ||
+      mappages(pagetable, (uint64)etext, PHYSTOP - (uint64)etext,
+               (uint64)etext, PTE_R | PTE_W) < 0 ||
+      mappages(pagetable, TRAMPOLINE, PGSIZE,
+               (uint64)trampoline, PTE_R | PTE_X) < 0) {
+    kvmfree(pagetable);
+    return 0;
+  }
+  return pagetable;
+}
 
-  // virtio mmio disk interface
-  kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-
-  // CLINT
+void kvminit(void) {
+  kernel_pagetable = kvmmake();
+  if (kernel_pagetable == 0) panic("kvminit");
   kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+}
 
-  // PLIC
-  kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+// Free only page-table pages, never the mapped physical memory.
+void kvmfree(pagetable_t pagetable) {
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
+      kvmfree((pagetable_t)PTE2PA(pte));
+  }
+  kfree(pagetable);
+}
 
-  // map kernel text executable and read-only.
-  kvmmap(KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X);
+// Share the 96 level-1 entries below PLIC (192 MiB). A null user
+// table detaches them before either page-table tree is freed.
+void kvmsync(pagetable_t kernel, pagetable_t user) {
+  pagetable_t dst = (pagetable_t)PTE2PA(kernel[0]);
+  pagetable_t src = user && (user[0] & PTE_V) ?
+                    (pagetable_t)PTE2PA(user[0]) : 0;
+  for (int i = 0; i < PLIC / (1L << 21); i++)
+    dst[i] = src ? src[i] : 0;
+  sfence_vma();
+}
 
-  // map kernel data and the physical RAM we'll make use of.
-  kvmmap((uint64)etext, (uint64)etext, PHYSTOP - (uint64)etext, PTE_R | PTE_W);
+static void vmprintwalk(pagetable_t pagetable, int level, uint64 prefix) {
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if (!(pte & PTE_V)) continue;
+    uint64 va = prefix | ((uint64)i << PXSHIFT(level));
+    uint64 pa = PTE2PA(pte);
+    int leaf = pte & (PTE_R | PTE_W | PTE_X);
+    for (int depth = 2; depth > level; depth--) printf("||   ");
+    printf("||idx: %d: ", i);
+    if (leaf) printf("va: %p -> ", va);
+    printf("pa: %p, flags: %s%s%s%s\n", pa,
+           pte & PTE_R ? "r" : "-", pte & PTE_W ? "w" : "-",
+           pte & PTE_X ? "x" : "-", pte & PTE_U ? "u" : "-");
+    if (!leaf) vmprintwalk((pagetable_t)pa, level - 1, va);
+  }
+}
 
-  // map the trampoline for trap entry/exit to
-  // the highest virtual address in the kernel.
-  kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+void vmprint(pagetable_t pagetable) {
+  printf("page table %p\n", pagetable);
+  vmprintwalk(pagetable, 2, 0);
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -316,21 +356,13 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
-  uint64 n, va0, pa0;
-
-  while (len > 0) {
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if (pa0 == 0) return -1;
-    n = PGSIZE - (srcva - va0);
-    if (n > len) n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  // Keep SUM local to this copy, including across timer interrupts.
+  push_off();
+  w_sstatus(r_sstatus() | SSTATUS_SUM);
+  int result = copyin_new(pagetable, dst, srcva, len);
+  w_sstatus(r_sstatus() & ~SSTATUS_SUM);
+  pop_off();
+  return result;
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -338,38 +370,12 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
 int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max) {
-  uint64 n, va0, pa0;
-  int got_null = 0;
-
-  while (got_null == 0 && max > 0) {
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if (pa0 == 0) return -1;
-    n = PGSIZE - (srcva - va0);
-    if (n > max) n = max;
-
-    char *p = (char *)(pa0 + (srcva - va0));
-    while (n > 0) {
-      if (*p == '\0') {
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
-
-    srcva = va0 + PGSIZE;
-  }
-  if (got_null) {
-    return 0;
-  } else {
-    return -1;
-  }
+  push_off();
+  w_sstatus(r_sstatus() | SSTATUS_SUM);
+  int result = copyinstr_new(pagetable, dst, srcva, max);
+  w_sstatus(r_sstatus() & ~SSTATUS_SUM);
+  pop_off();
+  return result;
 }
 
 // check if use global kpgtbl or not
